@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Live & Upcoming Football (7 Days)</title>
+<style>
+body{font-family:Arial,sans-serif;margin:10px;background:#f8f9fa;color:#333}
+h1{font-size:22px;margin-bottom:15px}
+.controls{margin-bottom:15px;}
+.league{margin-top:20px;font-size:18px;font-weight:bold}
+.match{padding:10px;margin:6px 0;border:1px solid #ccc;border-radius:4px;background:#fff}
+button{padding:5px 10px;margin-right:5px;border-radius:3px;border:1px solid #333;background:#eee;cursor:pointer;}
+button.active{background:#ccc;}
+</style>
+</head>
+<body>
+<h1>Global Live & Upcoming Matches (Next 7 Days)</h1>
+<div class="controls">
+  <button id="btnAll" class="active">Sve mečeve</button>
+  <button id="btnLive">Samo live</button>
+  <button id="btnUpcoming">Predstojeće 7 dana</button>
+</div>
+<div id="matches">Učitavanje...</div>
+<script>
+// Lista liga (placeholder za više od 50 liga)
+const leagues=[
+  {name:'Bundesliga',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'2. Bundesliga',url:'https://www.openligadb.de/api/getmatchdata/bl2/2023'},
+  {name:'Regionalliga',url:'https://www.openligadb.de/api/getmatchdata/bl3/2023'},
+  {name:'DFB Pokal',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Premier League',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'La Liga',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Serie A',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Ligue 1',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Eredivisie',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Primeira Liga',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Super League CH',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Bundesliga Women',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'2. Bundesliga Women',url:'https://www.openligadb.de/api/getmatchdata/bl2/2023'},
+  {name:'Champions League',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Europa League',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Conference League',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'Youth Bundesliga',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'},
+  {name:'DFB Pokal Women',url:'https://www.openligadb.de/api/getmatchdata/bl1/2023'}
+  // Dodati više liga po potrebi
+];
+
+// Heuristička prognoza
+function predict(hg,ag,minute){
+  const t=hg+ag;
+  const rem=Math.max(0,90-minute)/90;
+  const ph=0.5 + 0.25*(hg-ag)/Math.max(1,t+1)+0.1*rem;
+  const pa=0.5 - 0.25*(hg-ag)/Math.max(1,t+1)-0.1*rem;
+  const pd=1-(ph+pa);
+  return {home:ph,draw:pd,away:pa};
+}
+
+// Globalne promenljive za filtriranje
+let filterMode='all'; // all, live, upcoming
+
+document.getElementById('btnAll').onclick=()=>{filterMode='all'; setActiveButton('btnAll'); start();}
+document.getElementById('btnLive').onclick=()=>{filterMode='live'; setActiveButton('btnLive'); start();}
+document.getElementById('btnUpcoming').onclick=()=>{filterMode='upcoming'; setActiveButton('btnUpcoming'); start();}
+
+function setActiveButton(id){
+  document.querySelectorAll('.controls button').forEach(b=>b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// Fetch i render funkcija
+async function start(){
+  const container=document.getElementById('matches');
+  container.innerHTML='';
+  const now=new Date();
+  const next7=new Date(); next7.setDate(now.getDate()+7);
+
+  for(const league of leagues){
+    const divLeague=document.createElement('div');
+    divLeague.className='league';
+    divLeague.textContent=league.name;
+    container.appendChild(divLeague);
+
+    let matches=await fetch(league.url).then(r=>r.json()).catch(e=>{console.error(e); return []});
+    if(!matches || matches.length===0){
+      const noData=document.createElement('div');
+      noData.textContent='Nema podataka za ovu ligu.';
+      container.appendChild(noData);
+      continue;
+    }
+
+    matches = matches.filter(m=>{
+      const matchDate=new Date(m.MatchDateTime);
+      if(filterMode==='live') return !m.MatchIsFinished && matchDate <= now;
+      if(filterMode==='upcoming') return !m.MatchIsFinished && matchDate >= now && matchDate <= next7;
+      return true;
+    });
+
+    if(matches.length===0){
+      const noMatch=document.createElement('div');
+      noMatch.textContent='Nema mečeva za izabrani filter.';
+      container.appendChild(noMatch);
+      continue;
+    }
+
+    matches.forEach(m=>{
+      const home=m.Team1.TeamName;
+      const away=m.Team2.TeamName;
+      const date=new Date(m.MatchDateTime).toLocaleString();
+      let hg=0,ag=0,minute=0,score='-';
+      if(m.MatchResults && m.MatchResults.length>0){
+        hg=m.MatchResults[0].PointsTeam1;
+        ag=m.MatchResults[0].PointsTeam2;
+        score=hg+' : '+ag;
+        minute=90;
+      }
+      const pred=predict(hg,ag,minute);
+      const divMatch=document.createElement('div');
+      divMatch.className='match';
+      divMatch.innerHTML=`<strong>${home} vs ${away}</strong><br>
+                          Datum & Vreme: ${date}<br>
+                          Rezultat: ${score}<br>
+                          Prognoza → H: ${(pred.home*100).toFixed(1)}% D: ${(pred.draw*100).toFixed(1)}% A: ${(pred.away*100).toFixed(1)}%`;
+      container.appendChild(divMatch);
+    });
+  }
+  setTimeout(start,120000); // osveži svakih 2 minuta
+}
+
+start();
+</script>
+</body>
+</html>
